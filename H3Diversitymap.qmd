@@ -1,0 +1,215 @@
+---
+title: "H3Diversitymap"
+format: html
+editor: visual
+---
+
+## **SET RUNTIME PARAMETERS** 
+
+```{r}
+workdir <- "C:/Users/pdeschepper/Desktop/H3SnakeExample"
+input <- "Greek_snakes.csv"
+species_col <- "scientific_name"
+longitude_col <- "longitude"
+latitude_col <- "latitude"
+esn <- 50 # Set the value for the ES/Hurlbert's index estimator
+crs_target <- 3857 #crs target for png
+estimator <- "richness" # one of richness, shannon_diversity, simpson_diversity, ES, maxp, hill_1, hill_2, hill_inf
+# Visuals specs
+hex_res <- 5.5 # between 0 and 15, smaller equals larger polygons
+plot_background_map <- TRUE # FALSE or TRUE, plot background yes or no
+background_type <- "osm" # Options: "osm" for OpenStreetMap, "country_borders" for country borders
+osm_res <- 5 # zoom level, proxy for map resolution of OpenStreetMap
+output_type <- "png"  # "interactive_htlm" with leaflet or "png" in chosen projection
+
+```
+
+## **0. Load libraries** 
+
+```{r}
+library(h3)
+library(sf)
+library(dplyr)
+library(viridis)
+library(ggplot2)
+library(ggspatial)
+library(prettymapr)
+library(htmlwidgets)
+library(leaflet)
+library(rnaturalearth)
+```
+
+## **1. Data Loading and Preparation**
+
+The part first sets the working directory and reads the input CSV file. It then prepares the data by adding H3 cell IDs to each occurrence record based on its latitude and longitude. Rows with missing species names are filtered out.
+
+```{r}
+#| label: data-prep
+#| echo: true
+
+# 1. Set working dir, Read data with Species, decimalLongitude and decimalLatitude column ####
+setwd(workdir)
+occurs <- read.table(file = input, sep = ",", header = TRUE)
+
+# 2. Data prep: add h3 cells to dataframe and estimate diversity ####
+# Getting the right columns for th h3::geo_to_h3 function
+occurs <- occurs %>%
+  mutate(
+    lng = as.numeric(!!sym(longitude_col)),
+    lat = as.numeric(!!sym(latitude_col)),
+    species = !!sym(species_col)
+  )
+# Add h3 cell IDs
+occurs_cells <- occurs %>%
+  mutate(cell = geo_to_h3(data.frame(lat = lat, lng = lng), res = hex_res))
+# Remove rows with missing species
+occurs_cells <- occurs_cells %>%
+  filter(!is.na(.data[[species_col]]), .data[[species_col]] != "")
+```
+
+### **2. Diversity Calculation**
+
+This part of the script calculates diversity metrics for each H3 cell. It first groups the data by cell and species to count records, and then uses the `obisindicators::calc_indicators` function to compute various diversity indexes like richness, Shannon, and Simpson diversity.
+
+```{r}
+#| label: diversity-calculation
+#| echo: true
+
+# Count records per species per cell
+occurs_cells <- occurs_cells %>%
+  group_by(cell, species) %>%
+  summarise(records = n(), .groups = "drop") %>% 
+  mutate(species = species)
+# Calculate diversity indicators
+cell_diversity <- obisindicators::calc_indicators(occurs_cells, esn = esn)
+```
+
+### **3. Polygon Creation**
+
+The H3 cell IDs are converted into geospatial polygons using the `h3_to_geo_boundary_sf` function. The calculated diversity metrics are then joined to these polygons, creating a spatial data frame that is ready for plotting. A lookup table is created to provide descriptive names for the diversity metrics, which will be used in the map legends.
+
+```{r}
+#| label: create-polygons
+#| echo: true
+
+# 3. Make polygons ####
+polygons <- h3_to_geo_boundary_sf(cell_diversity$cell) %>%
+  dplyr::mutate(cell = cell_diversity$cell,
+                survey_effort = cell_diversity$n,
+                richness = cell_diversity$sp,
+                shannon_diversity = cell_diversity$shannon,
+                simpson_diversity = cell_diversity$simpson,
+                ES = cell_diversity$es,
+                maxp = cell_diversity$maxp,
+                hill_1 = cell_diversity$hill_1,
+                hill_2 = cell_diversity$hill_2,
+                hill_inf = cell_diversity$hill_inf) %>%
+                st_transform(crs = crs_target)
+# Make a reference table for nice legend
+legend <- list(richness = "Species richness (n)",
+               shannon_diversity = "Shannon Diversity",
+               simpson_diversity = "Simpson Diversity",
+               ES = "ES (Hulbert's index)",
+               maxp = "MaxP",
+               hill_1 = "Hill1 (exp(shannon))",
+               hill_2 = "Hill2 (1/simpson)",
+               hill_inf = "Hill3 (1/maxp)")
+```
+
+### **4. Map Generation**
+
+Based on the `output_type` parameter, this final section generates either an interactive HTML map or a static PNG.
+
+-   **Interactive HTML:** Uses the `leaflet` library to create a dynamic map with a chosen background (OpenStreetMap) and a color legend. The polygons are colored according to the selected diversity estimator, and pop-ups show the diversity value when a polygon is clicked. The map is saved as an HTML file.
+
+-   **Static PNG:** Uses `ggplot2` to create a static image. It can include a background map from either OpenStreetMap or country borders. The polygons are filled with a viridis color palette based on the chosen diversity estimator. The plot is saved as a high-resolution PNG file.
+
+```{r}
+#| label: map-generation
+#| echo: true
+#| results: "asis"
+
+# 4. Make a map ####
+setwd(workdir)
+file_name <- paste0("H3Hexagons_","res",hex_res,"_",estimator)
+plot_data <- polygons
+# Output type = interactive_html
+if (output_type == "interactive_html") {
+  # Transform to WGS84 for leaflet
+  plot_data_leaflet <- st_transform(plot_data, crs = 4326)
+  # Prevent wrapping of polygons at the antimeridian
+  plot_data_leaflet <- st_wrap_dateline(
+    plot_data_leaflet,
+    options = c("WRAPDATELINE=YES", "DATELINEOFFSET=179.9999")
+  )
+  # Extract values for selected estimator
+  metric_vals <- plot_data_leaflet[[estimator]]
+  # Create color palette
+  pal <- colorNumeric(
+    palette = viridis(100),
+    domain = metric_vals
+  )
+  # Create leaflet map
+  m <- leaflet(plot_data_leaflet) %>%
+    addProviderTiles(providers$OpenStreetMap) %>%
+    addPolygons(
+      fillColor = ~pal(get(estimator)),
+      color = "black",
+      weight = 1,
+      opacity = 1,
+      fillOpacity = 0.7,
+      popup = ~paste(legend[[estimator]], ":", get(estimator))
+    ) %>%
+    addLegend(
+      pal = pal,
+      values = metric_vals,
+      title = legend[[estimator]],
+      opacity = 1
+    )
+  # Save HTML
+  saveWidget(m, paste0(file_name,".html"), selfcontained = TRUE)
+  cat("### Interactive Map Output\n\n")
+  cat(paste0("An interactive HTML map titled **", file_name, ".html** was generated and saved to your working directory."))
+  
+# Output type = png
+} else if (output_type == "png") {
+  if (background_type == "osm") {
+    # Reproject to Web Mercator for OSM tiles
+    plot_data_bg <- st_transform(plot_data, 3857)
+  } else {
+    # Keep in target CRS for country borders
+    plot_data_bg <- plot_data
+  }
+  # Start plot
+  p <- ggplot()
+  # Add background map if needed
+  if (plot_background_map) {
+    if (background_type == "osm") {
+      p <- p + annotation_map_tile(
+        type = "osm",
+        zoom = osm_res
+      )
+    } else if (background_type == "country_borders") {
+      world <- ne_countries(scale = "medium", returnclass = "sf")
+      world <- st_transform(world, crs = crs_target)
+      p <- p + geom_sf(data = world, fill = "grey90", color = "gray70", linewidth = 0.2)
+    }
+
+  }
+  # Add the H3 hexagons
+  p <- p +
+    geom_sf(data = plot_data_bg, aes(fill = .data[[estimator]]), color = "black") +
+    scale_fill_viridis_c(name = legend[[estimator]], option = "viridis") +
+    theme_minimal() +
+    ggtitle("Spatial diversity")
+  # Use bounding box from reprojected data
+  bbox <- st_bbox(plot_data_bg)
+  p <- p + coord_sf(xlim = c(bbox["xmin"], bbox["xmax"]),
+                    ylim = c(bbox["ymin"], bbox["ymax"]))
+  # Save .png
+  ggsave(paste0(workdir,"/",file_name,".png"), p, width = 8, height = 6, dpi = 400)
+  message(file_name, " was saved.")
+  cat("### Static PNG Output\n\n")
+  cat(paste0(file_name, ".png** was generated and saved to your working directory."))
+}
+```
