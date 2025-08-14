@@ -18,6 +18,10 @@ This Quarto document and accompanying R script provide a reproducible workflow f
 
 **Customizable Map Backgrounds**: For PNG output, you can choose between an OpenStreetMap base layer or country borders.
 
+<img width="3200" height="2400" alt="H3Hexagons_res5 7_richness" src="https://github.com/user-attachments/assets/f263edee-edcb-49e6-93e7-da1ceaa26868" />
+
+
+
 More info: 
 - https://github.com/marinebon/obisindicators
 - https://iobis.github.io/notebook-diversity-indicators
