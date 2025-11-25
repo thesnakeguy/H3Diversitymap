@@ -1,10 +1,10 @@
 # Quarto Document for H3 Diversity Plotting
-This Quarto document and accompanying R script provide a reproducible workflow for visualizing species diversity using H3 hexagonal cells. It processes species occurrence data from a CSV file, calculates various diversity metrics, and generates a map in either an interactive HTML or a static PNG format.
+This Quarto document and accompanying R script provide a reproducible workflow for visualizing species diversity using H3 hexagonal cells. It processes species occurrence data from a tab-delimited .txt file, calculates various diversity metrics, and generates a map in either an interactive HTML or a static PNG format.
 
 ***
 
 ### Features
-* Flexible Input: Reads species occurrence data from a specified CSV file (longitude, latitude and species should be present).
+* Flexible Input: Reads species occurrence data from a specified .txt file (longitude, latitude and species should be present) as outputted by GBIF and OBIS
 
 * H3 Hexagon Integration: Utilizes the H3 geospatial indexing system to discretize the map into hexagons of a chosen resolution.
 
