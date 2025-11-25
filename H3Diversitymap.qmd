@@ -1,30 +1,31 @@
 ---
 title: "H3Diversitymap"
-format: html
-editor: visual
 ---
 
-## **SET RUNTIME PARAMETERS** 
+This script allows for the easy visualization of species diversity metrics estimated by the obisindicators R package, using species occurrence data from gbif/obis as input data. Diversity is estimated and displayed in hexagonal grid cells, adopting a resolution specified by the user. Maps can be generated in .png format in a range of projections or in an interactive html document (fixed to the default crs:4326 of leaflet).
+
+## **SET RUNTIME PARAMETERS**
 
 ```{r}
 workdir <- "C:/Users/pdeschepper/Desktop/H3SnakeExample"
-input <- "Greek_snakes.csv"
-species_col <- "scientific_name"
-longitude_col <- "longitude"
-latitude_col <- "latitude"
+input <- "SO_Channichthyidae.txt" #tab delimited txt (gbif export occurrences.txt)
+species_col <- "scientificName"
+longitude_col <- "decimalLongitude"
+latitude_col <- "decimalLatitude"
 esn <- 50 # Set the value for the ES/Hurlbert's index estimator
-crs_target <- 3857 #crs target for png
-estimator <- "richness" # one of richness, shannon_diversity, simpson_diversity, ES, maxp, hill_1, hill_2, hill_inf
+crs_target <- 3031 #crs target for png,leaflet will only plot the default 4326 projection
+estimator <- "shannon_diversity" # one of richness, shannon_diversity, simpson_diversity, ES, maxp, hill_1, hill_2, hill_inf
+
 # Visuals specs
-hex_res <- 5.5 # between 0 and 15, smaller equals larger polygons
+hex_res <- 4 # between 0 and 15, smaller equals larger polygons
 plot_background_map <- TRUE # FALSE or TRUE, plot background yes or no
-background_type <- "osm" # Options: "osm" for OpenStreetMap, "country_borders" for country borders
-osm_res <- 5 # zoom level, proxy for map resolution of OpenStreetMap
-output_type <- "png"  # "interactive_htlm" with leaflet or "png" in chosen projection
+background_type <- "country_borders" # Options: "osm" for OpenStreetMap, "country_borders" for country borders
+osm_res <- 7 # zoom level, proxy for map resolution of OpenStreetMap
+output_type <- "png"  # "interactive_html" with leaflet or "png" in chosen projection. If you pick "png" and "osm", it might take a long time to create your figure if you have a large study area.
 
 ```
 
-## **0. Load libraries** 
+## **0. Load libraries**
 
 ```{r}
 library(h3)
@@ -37,11 +38,12 @@ library(prettymapr)
 library(htmlwidgets)
 library(leaflet)
 library(rnaturalearth)
+library(obisindicators)
 ```
 
 ## **1. Data Loading and Preparation**
 
-The part first sets the working directory and reads the input CSV file. It then prepares the data by adding H3 cell IDs to each occurrence record based on its latitude and longitude. Rows with missing species names are filtered out.
+The part first sets the working directory and reads the input tab-delimited txt file. It then prepares the data by adding H3 cell IDs to each occurrence record based on its latitude and longitude. Rows with missing species names are filtered out.
 
 ```{r}
 #| label: data-prep
@@ -49,7 +51,7 @@ The part first sets the working directory and reads the input CSV file. It then 
 
 # 1. Set working dir, Read data with Species, decimalLongitude and decimalLatitude column ####
 setwd(workdir)
-occurs <- read.table(file = input, sep = ",", header = TRUE)
+occurs <- read.table(file = input, sep = "\t", header = TRUE, fill = TRUE)
 
 # 2. Data prep: add h3 cells to dataframe and estimate diversity ####
 # Getting the right columns for th h3::geo_to_h3 function
